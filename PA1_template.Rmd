@@ -7,7 +7,7 @@ output:
 
 
 ## Loading and preprocessing the data
-
+## This is a test
 
 
 ## What is mean total number of steps taken per day?
