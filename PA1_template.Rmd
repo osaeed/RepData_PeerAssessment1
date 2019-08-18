@@ -7,19 +7,179 @@ output:
 
 
 ## Loading and preprocessing the data
-## This is a test
 
+First load some of the libraries that will be utilized later on (dplyr and lattice).
+
+``` {r}
+library(dplyr)
+library(lattice)
+```
+
+The data for this assignment can be downloaded from https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip
+
+We will download the data from this location, unzip, and read it into raw table activityData.  Then we will get a summary of its contents to make sure it lines up with the description of the file.  
+
+``` {r}
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip", "activity.zip")
+activityData <- read.csv(unzip("activity.zip"))
+str(activityData)
+```
+
+We see that the number of observations matches the expected value of 17568, and we see the expected columns of steps, date, and interval. However, the date is a factor, and we will need it in the a date format, so we will go ahead and convert the column to a date.
+
+
+
+``` {r}
+activityData$date <- as.Date(activityData$date)
+str(activityData)
+```
+
+
+We will also create a table activityDataStepsNotNA which contains all observations for which steps has a recorded value (i.e. not NA).
+
+``` {r}
+activityDataStepsNotNA <- activityData[!is.na(activityData$steps),]
+str(activityDataStepsNotNA)
+```
+
+After removing the data points that have NA steps, we are left with 15264 observations.
 
 ## What is mean total number of steps taken per day?
 
+We will create an aggregate stepsByDate from activityDataStepsNotNA.  This aggregate will have total steps by each date.
 
+``` {r}
+stepsByDate<- aggregate (activityDataStepsNotNA$steps, 
+                         by=list(Date=activityDataStepsNotNA$date), FUN=sum)
+colnames(stepsByDate) <- c("date", "steps")
+```
+
+
+We will now create a histogram of frequency of total steps in a day.
+
+``` {r}
+hist(stepsByDate$steps, main="Frequency of Total Steps", xlab="Total Steps")
+```
+
+
+Now let's find the mean total number of steps in a day and the median.
+``` {r}
+mean(stepsByDate$steps, na.rm=TRUE)
+summary(stepsByDate$steps)
+```
+
+The mean 10766 steps, and the median is 10765 steps.
 
 ## What is the average daily activity pattern?
 
+We will create an aggregate stepsByInterval from activityDataStepsNotNA.  This aggregate will have average steps per interval.
 
+``` {r}
+stepsByInterval<- aggregate (activityDataStepsNotNA$steps, 
+                             by=list(Date=activityDataStepsNotNA$interval), FUN=mean)
+colnames(stepsByInterval) <- c("interval", "steps")
+```
+
+Let's plot the average steps by time interval.
+
+``` {r}
+plot(stepsByInterval$interval, stepsByInterval$steps, type="l", 
+     xlab="Time Interval", ylab="Average Steps", main="Average Steps by Time Interval")
+```
+
+Let's determine which interval has the highest number of steps.
+
+``` {r}
+stepsByInterval[order(-stepsByInterval$steps),][1,]
+```
+
+Interval 835 has the highest mean number of steps, 206.
 
 ## Imputing missing values
+To impute the values, we are going to use the average steps by interval.
+First we are going to round the average steps by interval to nearest whole number since steps should be a whole number
+
+``` {r}
+roundedStepsByInterval <- stepsByInterval
+roundedStepsByInterval$steps <- round(roundedStepsByInterval$steps)
+```
+
+Now we are going to create a new table, imputedActivityData, which fills in NA values with the average steps for the interval.  First we will merge the raw data (activityData) with the average steps per interval, rounded (roundedStepsByInterval).  We will verify that the merged data has 17568 observations, matching the raw data, and that there are NA values in the steps.x column, which contains activityData$steps. 
+
+``` {r}
+imputedActivityData <- merge(x=activityData, y=roundedStepsByInterval, by="interval")
+str(imputedActivityData)
+head(imputedActivityData)
+```
+
+Now we will create a column newSteps in imputedActivityData, which will consist of the steps from the raw data with NA values replaced with the average steps for the interval (steps.y).  We will then view a few rows in the data to verify that newSteps equals steps.y if steps.x is NA.
+
+``` {r}
+imputedActivityData$newSteps <- with(imputedActivityData, ifelse(is.na(steps.x), steps.y, steps.x))
+head(imputedActivityData)
+```
+
+We now want to see if imputing data causes any significant differences in the distribution, mean, and median versus the dataset without NA observations.
+
+First let's create an aggregate of the imputed data by date.
+
+``` {r}
+imputedStepsByDate<- aggregate (imputedActivityData$newSteps, 
+                         by=list(Date=imputedActivityData$date), FUN=sum)
+colnames(imputedStepsByDate) <- c("date", "steps")
+```
 
 
+Let's create a histogram of the data.
+
+``` {r}
+hist(imputedStepsByDate$steps, main="Frequency of Total Steps", xlab="Total Steps")
+```
+
+The histogram with imputed data is very similar to the histogram without NA observations.
+
+We now look at mean and median.
+
+``` {r}
+mean(imputedStepsByDate$steps, na.rm=TRUE)
+summary(imputedStepsByDate$steps)
+```
+
+Mean without NA obervations: 10766
+
+Mean with Imputed data: 10766
+
+Median without NA observations: 10765
+
+Median with Imputed data: 10762
+
+The mean and median are not significantly different once we impute the data.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+First we add a dayType factor variable to the imputed data.  dayType has 2 levels, weekday and weekend, depending on the day of the week for the date.  We will view some rows from the data frame to make sure the new column is properly set.
+
+``` {r}
+imputedActivityData$dayType <- as.factor(with(imputedActivityData, 
+                                    ifelse(weekdays(date) == "Saturday" | weekdays(date) == "Sunday",
+                                           "weekend", "weekday")))
+head(imputedActivityData, n=100L)
+```
+
+Now we will generate the dataset fo average steps by interval and day type.
+
+``` {r}
+stepsByIntervalAndDayType = imputedActivityData %>% group_by(interval, dayType) %>%
+     summarize (avgSteps = mean(newSteps))
+```
+
+Now we can plot this data for average number of stypes by interval per day type.
+
+``` {r}
+xyplot(avgSteps ~ interval | factor(dayType), data=stepsByIntervalAndDayType, 
+       type="l", layout=c(1,2), xlab="Interval", 
+       ylab = "Average Number of Steps", 
+       main= "Average Number of Steps by Interval per Day Type")
+```
+
+The plot shows that there is an early spike of activity on weekdays, but activity starts later in the day on weekends.
